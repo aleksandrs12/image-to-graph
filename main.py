@@ -1,0 +1,182 @@
+from PIL import Image
+import matplotlib.pyplot as plt
+import numpy as np
+from math import sqrt
+
+
+def make_positive(n):
+    if n < 0:
+        return -n
+    return n
+
+def distance(p1, p2):
+    return sqrt((p1[0]-p2[0])**2 + (p1[1]-p2[1])**2)
+
+image_path = "images/img10.png"  
+original_image = Image.open(image_path)
+
+grayscale_image = original_image.convert('L')
+
+grayscale_array = np.array(grayscale_image)
+
+binary_matrix = (grayscale_array < 200).astype(int)
+
+fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(15, 5))
+####
+
+indices = np.argwhere(binary_matrix)
+ones = np.argwhere(binary_matrix == 1)
+
+sum_x = 0
+n_x = 0
+
+sum_y = 0
+n_y = 0
+
+x_min = ones[0][1]
+x_max = ones[0][1]
+
+total_x_diff_squares = 0
+total_diff_deltas = 0
+
+start = (ones[0][1], ones[0][0])
+
+sets = []
+visited = {}
+bordering_pixels = []
+in_border = {}
+row, col = ones[0][0], ones[0][1]
+last_row, last_col = 0, 0
+pixels_in_line = 0
+while True:
+    pixels_in_line += 1
+    visited[(row, col)] = True
+    if col == 56 and row == 136:
+        print(start, 56, 136)
+        print()
+    #print(col, row)
+    if col != 0:
+        if not (row, col-1) in visited and binary_matrix[row][col-1] == 1:
+            bordering_pixels.append((row, col-1))
+            visited[(row, col-1)] = True
+    if col != len(binary_matrix[0])-1:
+        if not (row, col+1) in visited and binary_matrix[row][col+1] == 1:
+            bordering_pixels.append((row, col+1))
+            visited[(row, col+1)] = True
+    if row != 0:
+        if not (row-1, col) in visited and binary_matrix[row-1][col] == 1:
+            bordering_pixels.append((row-1, col))
+            visited[(row-1, col)] = True
+    if row != len(binary_matrix)-1:
+        if not (row+1, col) in visited and binary_matrix[row+1][col] == 1:
+            bordering_pixels.append((row+1,col))
+            visited[(row+1,col)] = True
+            
+    
+    
+    
+    sum_x += col
+    n_x += 1
+    sum_y += row
+    n_y += 1
+    
+    average_x = sum_x/n_x
+    average_y = sum_y/n_y
+    
+    total_x_diff_squares += (col - average_x)**2
+    total_diff_deltas += (col - average_x) * (row - average_y)
+    
+    m = total_diff_deltas / total_x_diff_squares
+    if total_x_diff_squares == 0:
+        m = total_diff_deltas
+    c = -m * average_x + average_y
+    
+    y_delta = (m*col + c) - row # the difference between expected and real y value
+    #print(f"({col}, {row}), [{average_x}, {average_y}], {y_delta}")
+    
+    if make_positive(y_delta) > 4:
+        print("Making a new line")
+        if make_positive(y_delta) > 8:
+            tempo = (row, col)
+            row = last_row
+            col = last_col
+        
+        if (last_row != start[1] or last_col != start[0]) and pixels_in_line > 5:
+            sets.append([m, c, x_min, x_max, start, (col, row)])
+            print(m, c, x_min, x_max, start, (col, row))
+        else:
+            print('was not added')
+        if make_positive(y_delta) > 8:
+            row, col = tempo[0], tempo[1]
+        start = (col, row)
+        x_min = col
+        x_max = col
+        pixels_in_line = 0
+        sum_x = 0
+        n_x = 0
+        sum_y = 0
+        n_y = 0
+        total_x_diff_squares = 0
+        total_diff_deltas = 0
+        
+        
+    if col > x_max:
+        x_max = col
+    elif col < x_min:
+        x_min = col
+        
+    min_delta = 9999
+    id = 0
+    last_row = row
+    last_col = col
+    for pixel in range(len(bordering_pixels)):
+        #print(make_positive((m*bordering_pixels[pixel][1] + c) - bordering_pixels[pixel][0]))
+        if make_positive((m*bordering_pixels[pixel][1] + c) - bordering_pixels[pixel][0]) < min_delta:
+            if distance((bordering_pixels[pixel][1], bordering_pixels[pixel][0]), (last_col, last_row)) > 8:
+                continue
+            
+            col = bordering_pixels[pixel][1]
+            row = bordering_pixels[pixel][0]
+            id = pixel
+    if len(bordering_pixels) == 0:
+        break
+    bordering_pixels.pop(id)
+    
+        
+if make_positive(y_delta) > 8:
+    row = last_row
+    col = last_col
+print(pixels_in_line, 11)
+if pixels_in_line > 5:  
+    print('making a line')
+    sets.append([m, c, x_min, x_max, start, (col, row)])
+actual_lines = []
+for set in sets:
+    actual_lines.append((set[4], set[5]))
+
+for line in actual_lines:
+    ax3.plot([line[0][0], line[1][0]], [line[0][1], line[1][1]], 'r-', linewidth=3, marker='o')
+    
+
+
+    
+    
+
+
+
+
+######
+ax1.imshow(original_image)
+ax1.set_title('Original Image')
+ax1.axis('off')
+
+ax2.imshow(grayscale_image, cmap='gray')
+ax2.set_title('Grayscale Image')
+ax2.axis('off')
+
+ax3.imshow(binary_matrix, cmap='binary')
+ax3.set_title('Binary Matrix (Threshold: 100)')
+ax3.axis('off')
+
+plt.tight_layout()
+plt.show()
