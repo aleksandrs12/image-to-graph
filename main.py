@@ -1,8 +1,23 @@
 from PIL import Image
 import matplotlib.pyplot as plt
 import numpy as np
-from math import sqrt
+from math import sqrt, inf
 
+
+####  TODO  ####
+# combine points
+# non connected islands
+# line weights in are_points_connected are looser as the line is getting longer
+
+
+
+####  ALL THE WEIGHTS ####
+line_correctness = 0.5 #how much of a line must lay on actual pixels
+line_range = 3 #how many pixels off the line can an actual pixel be for us to count it
+points_for_inclomplete = 0.8 #how much points would we give to a line for a pixel that is not on the line but is near it
+delta_weight = 3 #line accuracy (more - less lines)
+delta_dealbreaker = 8 #delta that makes me not use this point
+min_pixels_in_line = 5 # randomass weight, leave it as it is, ur prob better off not changing it
 
 def make_positive(n):
     if n < 0:
@@ -11,6 +26,48 @@ def make_positive(n):
 
 def distance(p1, p2):
     return sqrt((p1[0]-p2[0])**2 + (p1[1]-p2[1])**2)
+
+def are_points_connected(p1, p2, matrix, weight=line_correctness, range_weight=line_range, points_for_inclomplete_weight=points_for_inclomplete):
+    print(p1, p2)
+    if p2[0] > p1[0]:
+        tempo = (p1[0], p1[1])
+        p1 = (p2[0], p2[1])
+        p2 = (tempo[0], tempo[1])
+    print(p1, p2)
+    
+    k = (p1[1]-p2[1]) / (p1[0]-p2[0])
+    if (p1[0]-p2[0]) == 0 or k == 0:
+        k2 = inf
+    else:
+        k2 = -(1/k) #k of the perpendicular function
+    
+    total_pixels = 0
+    total_true_pixels = 0
+    for x in range(0, p1[0]-p2[0]):
+        print(x + p2[0], round(k*x + p2[1]), matrix[round(k*x + p2[1])][x + p2[0]])
+        total_pixels += 1
+        if matrix[round(k*x + p2[1])][x + p2[0]]:
+            total_true_pixels += 1
+        else:
+            if k2 == inf:
+                for y2 in range(-range_weight, range_weight+1):
+                    if round(k*x + p2[1]) + y2 < len(matrix) and x + p2[0] < len(matrix[0]) and round(k*x + p2[1]) + y2 >= 0 and x + p2[0] < len(matrix[0]) >= 0:
+                        if matrix[round(k*x + p2[1]) + y2][x + p2[0]] == 1:
+                            total_true_pixels += points_for_inclomplete_weight
+                            break
+            else:    
+                for x2 in range(-range_weight, range_weight+1):
+                    if round(k*x + p2[1] + k2*x2) < len(matrix) and x + x2 + p2[0] < len(matrix[0]) and round(k*x + p2[1] + k2*x2) >= 0 and x + x2 + p2[0] >= 0:
+                        print(x, x2, k, k2, p2[1], p2[0], len(matrix), len(matrix[0]))
+                        if matrix[round(k*x + p2[1] + k2*x2)][x + x2 + p2[0]] == 1:
+                            total_true_pixels += points_for_inclomplete_weight
+                            break
+    if total_pixels == 0:
+        return True
+    if total_true_pixels / total_pixels >= weight:
+        return True
+    return False
+        
 
 image_path = "images/img10.png"  
 original_image = Image.open(image_path)
@@ -33,8 +90,8 @@ n_x = 0
 sum_y = 0
 n_y = 0
 
-x_min = ones[0][1]
-x_max = ones[0][1]
+x_min = ones[0]
+x_max = ones[0]
 
 total_x_diff_squares = 0
 total_diff_deltas = 0
@@ -48,12 +105,11 @@ in_border = {}
 row, col = ones[0][0], ones[0][1]
 last_row, last_col = 0, 0
 pixels_in_line = 0
+endpoint_points = []
+points_extremes = []
 while True:
     pixels_in_line += 1
     visited[(row, col)] = True
-    if col == 56 and row == 136:
-        print(start, 56, 136)
-        print()
     #print(col, row)
     if col != 0:
         if not (row, col-1) in visited and binary_matrix[row][col-1] == 1:
@@ -94,23 +150,25 @@ while True:
     y_delta = (m*col + c) - row # the difference between expected and real y value
     #print(f"({col}, {row}), [{average_x}, {average_y}], {y_delta}")
     
-    if make_positive(y_delta) > 4:
+    if make_positive(y_delta) > delta_weight:
         print("Making a new line")
-        if make_positive(y_delta) > 8:
+        if make_positive(y_delta) > delta_dealbreaker:
             tempo = (row, col)
             row = last_row
             col = last_col
         
-        if (last_row != start[1] or last_col != start[0]) and pixels_in_line > 5:
+        if (last_row != start[1] or last_col != start[0]) and pixels_in_line > min_pixels_in_line:
             sets.append([m, c, x_min, x_max, start, (col, row)])
-            print(m, c, x_min, x_max, start, (col, row))
-        else:
-            print('was not added')
-        if make_positive(y_delta) > 8:
+            endpoint_points.append(start)
+            endpoint_points.append((col, row))
+            points_extremes.append((x_min[0], x_min[1]))
+            points_extremes.append((x_max[0], x_max[1]))
+            
+        if make_positive(y_delta) > delta_dealbreaker:
             row, col = tempo[0], tempo[1]
         start = (col, row)
-        x_min = col
-        x_max = col
+        x_min = (col, row)
+        x_max = (col, row)
         pixels_in_line = 0
         sum_x = 0
         n_x = 0
@@ -120,10 +178,10 @@ while True:
         total_diff_deltas = 0
         
         
-    if col > x_max:
-        x_max = col
-    elif col < x_min:
-        x_min = col
+    if col > x_max[0]:
+        x_max = (col, row)
+    elif col < x_min[0]:
+        x_min = (col, row)
         
     min_delta = 9999
     id = 0
@@ -143,19 +201,45 @@ while True:
     bordering_pixels.pop(id)
     
         
-if make_positive(y_delta) > 8:
+if make_positive(y_delta) > delta_dealbreaker:
     row = last_row
     col = last_col
 print(pixels_in_line, 11)
-if pixels_in_line > 5:  
+if pixels_in_line > min_pixels_in_line:  
     print('making a line')
     sets.append([m, c, x_min, x_max, start, (col, row)])
 actual_lines = []
 for set in sets:
-    actual_lines.append((set[4], set[5]))
+    actual_lines.append((set[2], set[3]))
+    
+#point logic
+points = []
+points_seen = {}
+        
+for point in points_extremes:
+    if not point in points_seen:
+        points_seen[point] = True
+        points.append(point)
+
+#line logic
+
+for i in range(len(actual_lines)-1, -1, -1):
+    if not are_points_connected(actual_lines[i][0], actual_lines[i][1], binary_matrix):
+        actual_lines.pop(i)
 
 for line in actual_lines:
-    ax3.plot([line[0][0], line[1][0]], [line[0][1], line[1][1]], 'r-', linewidth=3, marker='o')
+    ax3.plot([line[0][0], line[1][0]], [line[0][1], line[1][1]], 'r-', linewidth=1, marker='o')
+    pass
+
+'''
+for point in endpoint_points:
+    ax3.plot(point[0], point[1], 'ro',)
+    
+for point in points_extremes:
+    ax3.plot(point[0], point[1], 'go',)
+'''
+for point in points:
+    ax3.plot(point[0], point[1], 'go',)
     
 
 
